@@ -10,6 +10,7 @@ import {
     Vec2,
     Vec3,
     geometry,
+    Mesh,
 } from 'cc';
 
 declare module 'cc' {
@@ -72,6 +73,11 @@ export declare class Gizmos3D {
     static drawOctahedron(node: Node, position: Vec3, radius: number, rot?: Vec3, wireFrame?: boolean): void;
     static drawCross(node: Node, center: Vec3, size: number): void;
     static drawCapsule(node: Node, position: Vec3, radius: number, height: number, rot?: Vec3, wireFrame?: boolean, segmentsX?: number, segmentsY?: number): void;
+    /** Draw Mesh assets or raw triangles in Editor Scene; wireFrame defaults to true. */
+    static drawMesh(node: Node, mesh: Mesh | {
+        vertices: Vec3[];
+        indices?: number[];
+    }, position?: Vec3, rotation?: Vec3, scale?: Vec3, wireFrame?: boolean): void;
     static drawBox(node: Node, center: Vec3, size: Vec3, rot?: Vec3, wireFrame?: boolean): void;
     static drawCylinder(node: Node, position: Vec3, radius: number, height: number, rot?: Vec3, wireFrame?: boolean, segments?: number): void;
     static drawCone(node: Node, position: Vec3, radius: number, height: number, rot?: Vec3, wireFrame?: boolean, segments?: number): void;

@@ -16,24 +16,68 @@ import {
 declare module 'cc' {
     interface Component {
         /**
-         * Call per frame in editor (Only use in editor)
+         * Draws Gizmos in the Scene View while the extension is enabled.
+         * Keep Gizmos API calls inside this optional callback for type-only projects.
          */
         onDrawGizmos?(): void;
-        /**
-         * Call per frame in editor when node selected (Only use in editor)
-         */
+        /** Draws Gizmos while this component's node is selected. */
         onDrawGizmosSelected?(): void;
+        /**
+         * Defines editable Scene View position handles without a decorator.
+         * Annotate the implementation as : GizmoHandleList to enable
+         * completion for plane, space, axis, snap, bounds, and color.
+         */
+        onGizmoHandles?(): GizmoHandleList;
+        /**
+         * Controls this component's Scene drawing and HUD visibility.
+         * Keep serialized Inspector properties on the component and return
+         * their current values from this callback.
+         */
+        onGizmoSettings?(): GizmoViewSettings;
+        /**
+         * Returns informational text labels anchored near this node in Scene View.
+         * Entries with stable IDs reuse the same Label components across frames.
+         */
+        onGizmoHud?(): GizmoHudItem[];
+        /** Defines buttons, sliders, toggles and checkboxes in the Scene HUD. */
+        onGizmoHudControls?(): GizmoHudControlList;
+        /** Invoked once when the corresponding HUD button is clicked. */
+        onGizmoHudAction?(id: string): void;
+        /** Invoked when a HUD slider, toggle or checkbox changes its component property. */
+        onGizmoHudChanged?(property: string, phase: GizmoHandlePhase, value: number | boolean): void;
+        /** Receives handle changes, including cancelled edits. */
+        onGizmoChanged?(property: string, phase: GizmoHandlePhase, index?: number): void;
     }
 }
 
 export declare class Gizmos2D {
+    /** Two arrows (X/Y) and an XY tile to edit one Vec3 in the 2D Scene.
+     * Dragging preserves Z, uses fractional coordinates by default, and
+     * participates in the same undo/callback pipeline as Gizmos3D.move().
+     */
+    static move(property: string, options?: GizmosMove2DHandleOptions): GizmoHandleDescriptor[];
+    /** Edit one Vec3 property using a screen-sized 2D drag handle. */
+    static point(property: string, options?: GizmoPointOptions): GizmoHandleDescriptor;
+    /** Edit every Vec3 in an array. Zero points yields no handles. */
+    static points(property: string, count: number, options?: GizmoPointOptions): GizmoHandleDescriptor[];
     static readonly DEFAULT_COLOR: Readonly<Color>;
     static readonly DEFAULT_LAYER: number;
+    /** Flush the Editor Scene's 2D command buffers synchronously.
+     * Editor tabs can keep a GizmosDebugDraw node but stop dispatching
+     * its Component.lateUpdate after reloading an unsaved Scene.
+     */
+    static flushEditorFrame(): void;
+    /** Release any pending references before switching or resetting Scene. */
+    static clearPendingFrame(): void;
     static beginColor(node: Node, color: Color): void;
     static beginLocalPosition(node: Node): void;
     static endLocalPosition(node: Node): void;
     static drawSprite(node: Node, id: string, spriteFrame: SpriteFrame, position: IVec2Like, scale?: Vec2, color?: Color): void;
-    static drawLabel(node: Node, id: string, text: string, point: IVec2Like, fontSize?: number, scale?: Vec2): void;
+    static drawLabel(node: Node, id: string, text: string, point: IVec2Like, fontSize?: number, scale?: Vec2, 
+    /** Minimum visible font height in Scene screen pixels. */
+    minSize?: number, 
+    /** Maximum visible font height in Scene screen pixels. */
+    maxSize?: number): void;
     static beginLayer(node: Node, layer: Layers.Enum): void;
     static drawLine(node: Node, point1: IVec2Like, point2: IVec2Like): void;
     static drawLineList(node: Node, points: IVec2Like[], close?: boolean): void;
@@ -51,15 +95,43 @@ export declare class Gizmos2D {
 }
 
 export declare class Gizmos3D {
+    /** One call creates the complete XYZ + XY/XZ/YZ Move Gizmo.
+     * This façade only builds descriptors; Editor adapters own interactions.
+     */
+    static move(property: string, options?: GizmosMoveHandleOptions): GizmoHandleDescriptor[];
     static readonly DEFAULT_COLOR: Readonly<Color>;
     static readonly DEFAULT_LAYER: number;
     static setDepTest(node: Node, value: boolean): void;
+    /** Return the current depth-test state without changing it. */
+    static getDepTest(node: Node): boolean;
     static beginColor(node: Node, color: Color): void;
     static beginLocalPosition(node: Node): void;
     static endLocalPosition(node: Node): void;
     static drawSprite(node: Node, id: string, spriteFrame: SpriteFrame, position: Vec3, scale?: Vec2, color?: Color): void;
-    static drawLabel(node: Node, id: string, text: string, position: Vec3, fontSize?: number, scale?: number): void;
+    static drawLabel(node: Node, id: string, text: string, position: Vec3, fontSize?: number, scale?: number, 
+    /** Minimum font height in Scene screen pixels while zooming. */
+    minSize?: number, 
+    /** Maximum font height in Scene screen pixels while zooming. */
+    maxSize?: number): void;
+    /** Draw a stable, screen-size-clamped world position label above an object.
+     * ID reuse ensures that repeated Scene frames do not leak Label nodes.
+     */
+    static drawPositionLabel(node: Node, id: string, position: Vec3, options?: {
+        offsetPixels?: number;
+        digits?: number;
+        minSize?: number;
+        maxSize?: number;
+        color?: Color;
+    }): void;
     static drawLine(node: Node, point1: Vec3, point2: Vec3): void;
+    /** Editor-only arrow example similar to a Point3D vector in Gizmo Kit.
+     * Uses the current beginColor() color and does not create game objects.
+     */
+    static drawArrow(node: Node, from: Vec3, to: Vec3, headSize?: number): void;
+    /** Plane3D-style orientation preview: a square aligned to its normal.
+     * For an interactive plane, use moveHandles() or visual:'plane' instead.
+     */
+    static drawPlanePreview(node: Node, center: Vec3, normal: Vec3, size?: number, wireFrame?: boolean): void;
     static drawLineList(node: Node, points: Vec3[], close?: boolean): void;
     static drawDashLine(node: Node, point1: Vec3, point2: Vec3): void;
     static drawDashLineList(node: Node, points: Vec3[], close?: boolean): void;
@@ -86,6 +158,178 @@ export declare class Gizmos3D {
 }
 
 declare global {
+    type GizmoHandlePlane = 'xy' | 'xz' | 'yz' | 'view';
+    type GizmoHandleSpace = 'local' | 'world';
+    type GizmoHandleAxis = 'x' | 'y' | 'z';
+    type GizmoHandlePhase = 'begin' | 'update' | 'end' | 'cancel';
+    /**
+         * Describes one editable Vec3 position in the Scene View.
+         * Only the selected component's handles are displayed.
+         */
+        interface GizmoHandleDescriptor {
+            /** Name of a Vec3 or Vec3[] property on the component. */
+            property: string;
+            /** Index of the point when the property contains an array of Vec3 values. */
+            index?: number;
+            /** Movement plane. Defaults to the node's XY plane. */
+            plane?: GizmoHandlePlane;
+            /** Local (default) or world-space point coordinates. */
+            space?: GizmoHandleSpace;
+            /** Lock movement to one axis in the selected coordinate space. */
+            axis?: GizmoHandleAxis;
+            /** Optional snap interval; omit for continuous, unsnapped dragging. */
+            snap?: number;
+            /** Optional minimum and maximum values for each coordinate. */
+            bounds?: {
+                min?: {
+                    x?: number;
+                    y?: number;
+                    z?: number;
+                };
+                max?: {
+                    x?: number;
+                    y?: number;
+                    z?: number;
+                };
+            };
+            /** Point marker color as a hexadecimal color string. */
+            color?: string;
+            /** Unique identifier when multiple handles edit the same Vec3. */
+            id?: string;
+            /** Compact axis-arrow handle, plane tile, or a single point.
+             * For 'axis' set axis: 'x' | 'y' | 'z'. Three axis handles can
+             * reference the same Vec3 property using distinct ids.
+             */
+            visual?: 'point' | 'plane' | 'axis' | 'box';
+            /** Visible length of an axis arrow in Scene pixels (default 66). */
+            axisSize?: number;
+            /** Radius in Scene pixels used for easier axis/plane selection (default 24). */
+            pickSize?: number;
+            /** Highlight color while hovered or dragged, e.g. '#ffff55'. */
+            hoverColor?: string;
+            /** Show a live coordinate label above this property's position.
+             * When several handles edit the same property, the label is drawn once.
+             */
+            showPositionLabel?: boolean;
+            /** Label's vertical offset in screen pixels (default 82). */
+            positionLabelOffset?: number;
+            /** Selectable 3D object box side length in WORLD/local units.
+             * Set on a move handle when the object already draws its own box.
+             */
+            boxSize?: number;
+            /** Side length of the plane square in Scene pixels (default 18). */
+            planeSize?: number;
+            /** Offset of the square along its two axes in pixels (default 14). */
+            planeOffset?: number;
+        }
+    /** Settings for Gizmos3D.move(property, options). */
+        interface GizmosMoveHandleOptions {
+            /** Optional 3D selectable object box, e.g. 0.7 in the example. */
+            boxSize?: number;
+            space?: GizmoHandleSpace;
+            snap?: number;
+            axisSize?: number;
+            pickSize?: number;
+            planeSize?: number;
+            planeOffset?: number;
+            hoverColor?: string;
+            showPositionLabel?: boolean;
+            positionLabelOffset?: number;
+            bounds?: GizmoHandleDescriptor['bounds'];
+        }
+    /** Gizmos2D.move(): only X, Y and XY; no 3D body/box handle.
+         * Uses the Move descriptor options without boxSize.
+         */
+        type GizmosMove2DHandleOptions = Omit<GizmosMoveHandleOptions, 'boxSize'>;
+    /** Options for Gizmos2D.point() and Gizmos2D.points(). */
+        interface GizmoPointOptions {
+            plane?: GizmoHandlePlane;
+            space?: GizmoHandleSpace;
+            snap?: number;
+            color?: string;
+            pickSize?: number;
+            bounds?: GizmoHandleDescriptor['bounds'];
+        }
+    /** Controls when a component draws in the Scene View. */
+        type GizmoDisplayMode = 'always' | 'selected' | 'off';
+    /** Per-component Gizmo rendering and HUD visibility. */
+        interface GizmoViewSettings {
+            /** Draw on every Scene frame, only while selected, or never. */
+            display?: GizmoDisplayMode;
+            /** Draw HUD for selected nodes, all nodes, or never. */
+            hud?: 'selected' | 'always' | 'off';
+        }
+    /** Screen-space text attached to a component in the Scene View. */
+        interface GizmoHudItem {
+            /** Stable identifier for reusing the label across Scene frames. */
+            id: string;
+            /** Text to display beside the component in the Scene View. */
+            text: string;
+            /** Order within the component HUD. */
+            order?: number;
+            /** Preferred font height in screen pixels (default 14). */
+            fontSize?: number;
+            /** Minimum screen font height while zooming (default 12 pixels). */
+            minSize?: number;
+            /** Maximum screen font height while zooming (default 24 pixels). */
+            maxSize?: number;
+            /** RGBA hexadecimal color for the text. */
+            color?: string;
+        }
+    /** Shared visual sizing and ordering for Scene HUD controls. Controls
+         * stay inside their original 22px picking row to prevent overlap.
+         */
+        interface GizmoHudControlStyle {
+            /** Reorder the controls following text rows; equal orders are stable. */
+            order?: number;
+            /** Font height in on-screen pixels, clamped to 10–18 (default 14). */
+            fontSize?: number;
+            /** Control visual scale within its 22px row. */
+            size?: 'small' | 'normal' | 'large';
+        }
+    /** A clickable Scene View HUD button. */
+        interface GizmoHudButton extends GizmoHudControlStyle {
+            type: 'button';
+            id: string;
+            text: string;
+            color?: string;
+            /** Width of the button in Scene pixels. */
+            width?: number;
+        }
+    /** A Scene View slider bound to a serialized numeric component property. */
+        interface GizmoHudSlider extends GizmoHudControlStyle {
+            type: 'slider';
+            id: string;
+            text: string;
+            property: string;
+            min: number;
+            max: number;
+            step?: number;
+            color?: string;
+            /** Slider track width in Scene pixels, shared with click picking. */
+            width?: number;
+        }
+    /** A two-state switch bound to a serialized boolean property. */
+        interface GizmoHudToggle extends GizmoHudControlStyle {
+            type: 'toggle';
+            id: string;
+            text: string;
+            property: string;
+            color?: string;
+        }
+    /** A tickable box bound to a serialized boolean property. */
+        interface GizmoHudCheckbox extends GizmoHudControlStyle {
+            type: 'checkbox';
+            id: string;
+            text: string;
+            property: string;
+            color?: string;
+        }
+    /** Controls shown beside the component HUD text in the Scene View. */
+        type GizmoHudControl = GizmoHudButton | GizmoHudSlider | GizmoHudToggle | GizmoHudCheckbox;
+    type GizmoHudControlList = GizmoHudControl[];
+    /** A set of editable position handles returned by onGizmoHandles(). */
+        type GizmoHandleList = GizmoHandleDescriptor[];
     const Gizmos2D: typeof import('./Gizmos').Gizmos2D;
     const Gizmos3D: typeof import('./Gizmos').Gizmos3D;
 }

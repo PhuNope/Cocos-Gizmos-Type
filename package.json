@@ -1,6 +1,6 @@
 {
   "name": "@types/cocos-gizmos",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "types": "Gizmos.d.ts",
   "files": [
     "Gizmos.d.ts"
